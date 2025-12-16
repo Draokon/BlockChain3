@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Antique NFT Auction</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Antique NFT Auction DApp</h1>
+
+    <div>
+        <h2>Mint NFT</h2>
+        <input type="text" id="mintURI" placeholder="Token URI">
+        <button onclick="mintNFT()">Mint NFT</button>
+    </div>
+
+    <div>
+        <h2>Start Auction</h2>
+        <input type="number" id="auctionTokenId" placeholder="Token ID">
+        <input type="number" id="minBid" placeholder="Min Bid (ETH)">
+        <input type="number" id="duration" placeholder="Duration (seconds)">
+        <button onclick="startAuction()">Start Auction</button>
+    </div>
+
+    <div>
+        <h2>Bid</h2>
+        <input type="number" id="bidTokenId" placeholder="Token ID">
+        <input type="number" id="bidAmount" placeholder="Amount (ETH)">
+        <button onclick="placeBid()">Place Bid</button>
+    </div>
+
+    <div>
+        <h2>Withdraw Refund</h2>
+        <button onclick="withdrawRefund()">Withdraw Refund</button>
+    </div>
+
+    <div>
+        <h2>Finalize Auction</h2>
+        <input type="number" id="finalizeTokenId" placeholder="Token ID">
+        <button onclick="finalizeAuction()">Finalize</button>
+    </div>
+
+    <div>
+        <h2>Seller Withdraw</h2>
+        <input type="number" id="withdrawTokenId" placeholder="Token ID">
+        <button onclick="sellerWithdraw()">Withdraw Funds</button>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>
