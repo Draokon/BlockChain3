@@ -1,145 +1,94 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
+contract Auction {
+    enum AuctionStatus { Active, Finalized, Cancelled }
 
-contract AntiqueAuction is ERC721URIStorage {
-    using Counters for Counters.Counter;
-    Counters.Counter private _tokenIds;
+    address public immutable seller;
+    uint256 public minBid;
+    uint256 public highestBid;
+    address public highestBidder;
+    uint256 public endTime;
+    AuctionStatus public status;
 
-    struct AuctionItem {
-        address payable seller;
-        uint256 tokenId;
-        uint256 minBid;
-        uint256 highestBid;
-        address highestBidder;
-        uint256 auctionEnd;
-        bool finalized;
-    }
+    mapping(address => uint256) public pendingReturns;
 
-    mapping(uint256 => AuctionItem) public auctions; // tokenId => auction
-    mapping(address => uint256) public refunds;
+    // Rankinis apsaugos kintamasis nuo pakartotinio įėjimo (re-entrancy) 
+    bool private locked;
 
-    uint256 private unlocked = 1;
     modifier nonReentrant() {
-        require(unlocked == 1, "Reentrant call");
-        unlocked = 0;
+        require(!locked, "No re-entrancy");
+        locked = true;
         _;
-        unlocked = 1;
+        locked = false;
     }
 
     // Events
-    event NFTMinted(uint256 indexed tokenId, address indexed owner, string tokenURI);
-    event AuctionStarted(uint256 indexed tokenId, uint256 minBid, uint256 auctionEnd);
-    event BidPlaced(uint256 indexed tokenId, address indexed bidder, uint256 amount);
-    event RefundWithdrawn(address indexed bidder, uint256 amount);
-    event AuctionFinalized(uint256 indexed tokenId, address indexed winner, uint256 amount);
-    event SellerWithdrawn(uint256 indexed tokenId, address indexed seller, uint256 amount);
+    event BidPlaced(address indexed bidder, uint256 amount);
+    event AuctionFinalized(address winner, uint256 amount);
+    event AuctionCancelled();
+    event Withdrawal(address indexed receiver, uint256 amount);
 
-    constructor() ERC721("AntiqueNFT", "ANTQ") {}
-
-    /// Mint NFT for antique item
-    function mintNFT(string memory tokenURI) external returns (uint256) {
-        _tokenIds.increment();
-        uint256 newTokenId = _tokenIds.current();
-
-        _mint(msg.sender, newTokenId);
-        _setTokenURI(newTokenId, tokenURI);
-
-        emit NFTMinted(newTokenId, msg.sender, tokenURI);
-        return newTokenId;
-    }
-
-    /// Start auction for NFT
-    function startAuction(uint256 tokenId, uint256 minBid, uint256 durationSeconds) external {
-        require(ownerOf(tokenId) == msg.sender, "Only owner can start auction");
-        require(minBid > 0, "Minimum bid must be > 0");
-        require(durationSeconds > 0, "Duration must be > 0");
-
-        auctions[tokenId] = AuctionItem({
-            seller: payable(msg.sender),
-            tokenId: tokenId,
-            minBid: minBid,
-            highestBid: 0,
-            highestBidder: address(0),
-            auctionEnd: block.timestamp + durationSeconds,
-            finalized: false
-        });
-
-        // Transfer NFT to contract (escrow)
-        _transfer(msg.sender, address(this), tokenId);
-
-        emit AuctionStarted(tokenId, minBid, block.timestamp + durationSeconds);
+    constructor(uint256 _minBid, uint256 _duration) {
+        seller = msg.sender;
+        minBid = _minBid;
+        endTime = block.timestamp + _duration;
+        status = AuctionStatus.Active;
     }
 
     /// Place bid
-    function bid(uint256 tokenId) external payable {
-        AuctionItem storage auction = auctions[tokenId];
-        require(block.timestamp < auction.auctionEnd, "Auction ended");
-        require(msg.value >= auction.minBid, "Bid lower than minimum");
-        require(msg.value > auction.highestBid, "Bid not higher than current");
+    function bid() external payable nonReentrant {
+        require(status == AuctionStatus.Active, "Aukcionas neaktyvus");
+        require(block.timestamp < endTime, "Aukcionas pasibaiges");
+        require(msg.value >= minBid, "Per mazas pradinis statymas");
+        require(msg.value > highestBid, "Jau yra didesnis statymas");
 
-        // Refund previous highest bidder
-        if (auction.highestBidder != address(0)) {
-            refunds[auction.highestBidder] += auction.highestBid;
+        if (highestBidder != address(0)) {
+            pendingReturns[highestBidder] += highestBid;
         }
 
-        auction.highestBid = msg.value;
-        auction.highestBidder = msg.sender;
-
-        emit BidPlaced(tokenId, msg.sender, msg.value);
+        highestBidder = msg.sender;
+        highestBid = msg.value;
+        emit BidPlaced(msg.sender, msg.value);
     }
 
     /// Withdraw refunds
     function withdrawRefund() external nonReentrant {
-        uint256 refund = refunds[msg.sender];
-        require(refund > 0, "No refund");
-        refunds[msg.sender] = 0;
+        uint256 amount = pendingReturns[msg.sender];
+        require(amount > 0, "Neturite lesu atsiemimui");
 
-        (bool ok, ) = payable(msg.sender).call{value: refund}("");
-        require(ok, "Refund transfer failed");
+        pendingReturns[msg.sender] = 0;
+        (bool success, ) = msg.sender.call{value: amount}("");
+        require(success, "Pervedimas nepavyko");
 
-        emit RefundWithdrawn(msg.sender, refund);
+        emit Withdrawal(msg.sender, amount);
     }
 
     /// Finalize auction
-    function finalize(uint256 tokenId) external nonReentrant {
-        AuctionItem storage auction = auctions[tokenId];
-        require(block.timestamp >= auction.auctionEnd, "Auction not ended");
+    function finalize() external nonReentrant {
+
+        require(block.timestamp >= endTime, "Aukcionas dar nesibaige");
         require(!auction.finalized, "Already finalized");
-        require(msg.sender == auction.seller, "Only seller can finalize");
+        require(status == AuctionStatus.Active, "Aukcionas jau uzbaigtas");
 
-        auction.finalized = true;
+        status = AuctionStatus.Finalized;
 
-        if (auction.highestBidder != address(0)) {
-            _transfer(address(this), auction.highestBidder, tokenId);
-        } else {
-            // No bids, return NFT to seller
-            _transfer(address(this), auction.seller, tokenId);
+        if (highestBidder != address(0)) {
+            pendingReturns[seller] += highestBid;
         }
 
-        emit AuctionFinalized(tokenId, auction.highestBidder, auction.highestBid);
+        emit AuctionFinalized(highestBidder, highestBid);
     }
 
-    /// Seller withdraw ETH
-    function withdrawSeller(uint256 tokenId) external nonReentrant {
-        AuctionItem storage auction = auctions[tokenId];
-        require(auction.finalized, "Auction not finalized");
-        require(msg.sender == auction.seller, "Only seller");
-        require(auction.highestBid > 0, "No funds");
-
-        uint256 amount = auction.highestBid;
-        auction.highestBid = 0;
-
-        (bool ok, ) = auction.seller.call{value: amount}("");
-        require(ok, "Seller withdraw failed");
-
-        emit SellerWithdrawn(tokenId, auction.seller, amount);
-    }
-
-    /// Reject direct ETH transfers
-    receive() external payable {
-        revert("Direct ETH transfer not allowed");
+    function cancel() external {
+        require(msg.sender == seller, "Tik pardavejas gali atsaukti");
+        require(status == AuctionStatus.Active, "Negalima atsaukti");
+        
+        status = AuctionStatus.Cancelled;
+        if (highestBidder != address(0)) {
+            pendingReturns[highestBidder] += highestBid;
+        }
+        emit AuctionCancelled();
     }
 }
+
