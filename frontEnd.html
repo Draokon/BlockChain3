@@ -1,51 +1,179 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="lt">
 <head>
     <meta charset="UTF-8">
-    <title>Antique NFT Auction</title>
-    <link rel="stylesheet" href="style.css">
+    <title>Aukcionas</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; line-height: 1.6; background-color: #f4f4f9; }
+        .container { max-width: 500px; margin: auto; border: 1px solid #ccc; padding: 20px; border-radius: 10px; background: white; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        input, button { width: 100%; padding: 10px; margin: 5px 0; box-sizing: border-box; }
+        button { background: #f0b90b; border: none; cursor: pointer; font-weight: bold; border-radius: 5px; }
+        button:hover { background: #d8a60a; }
+        .btn-secondary { background: #eee; color: #333; }
+        .btn-finalize { background: #f44336; color: white; }
+        .btn-withdraw { background: #4CAF50; color: white; }
+        #status { color: blue; font-weight: bold; }
+        #statusMessage { color: red; font-weight: bold; text-align: center; margin: 10px 0; min-height: 1.2em; }
+        #auctionHistory { margin-top: 20px; border-top: 2px solid #eee; padding-top: 10px; }
+        ul { list-style: none; padding: 0; max-height: 200px; overflow-y: auto; }
+        li { padding: 8px; border-bottom: 1px solid #eee; font-size: 0.85em; background: #fff; }
+        li:nth-child(odd) { background: #fafafa; }
+    </style>
 </head>
 <body>
-    <h1>Antique NFT Auction DApp</h1>
-
-    <div>
-        <h2>Mint NFT</h2>
-        <input type="text" id="mintURI" placeholder="Token URI">
-        <button onclick="mintNFT()">Mint NFT</button>
+<div class="container">
+    <h2>Aukciono valdymas</h2>
+    <div id="statusMessage"></div>
+    
+    <p>Statusas: <span id="status">Kraunama...</span></p>
+    <p>Didžiausias statymas: <span id="highestBid">0</span> ETH</p>
+    
+    <hr>
+    
+    <input type="number" id="bidAmount" placeholder="Suma (ETH)" step="0.01">
+    <button onclick="placeBid()">Atlikti statymą (Bid)</button>
+    
+    <button class="btn-secondary" onclick="updateUI()">Atnaujinti duomenis</button>
+    <button class="btn-withdraw" onclick="withdrawFunds()">Atsiimti pinigus (Seller/Outbid)</button>
+    <button class="btn-finalize" onclick="finalizeAuction()">Užbaigti aukcioną (Finalize)</button>
+    
+    <div id="auctionHistory">
+        <h4>Statymų istorija:</h4>
+        <ul id="historyList"></ul>
     </div>
+</div>
 
-    <div>
-        <h2>Start Auction</h2>
-        <input type="number" id="auctionTokenId" placeholder="Token ID">
-        <input type="number" id="minBid" placeholder="Min Bid (ETH)">
-        <input type="number" id="duration" placeholder="Duration (seconds)">
-        <button onclick="startAuction()">Start Auction</button>
-    </div>
+<script>
+    const contractAddress = "0x22E2144701F2A821e48ce934Eeb9fe2F509e560F";
+    const contractABI = [
+        {"inputs":[{"internalType":"uint256","name":"_minBid","type":"uint256"},{"internalType":"uint256","name":"_duration","type":"uint256"}],"stateMutability":"nonpayable","type":"constructor"},
+        {"anonymous":false,"inputs":[],"name":"AuctionCancelled","type":"event"},
+        {"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"winner","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"AuctionFinalized","type":"event"},
+        {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"bidder","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"BidPlaced","type":"event"},
+        {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"receiver","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"Withdrawal","type":"event"},
+        {"inputs":[],"name":"bid","outputs":[],"stateMutability":"payable","type":"function"},
+        {"inputs":[],"name":"cancel","outputs":[],"stateMutability":"nonpayable","type":"function"},
+        {"inputs":[],"name":"endTime","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+        {"inputs":[],"name":"finalize","outputs":[],"stateMutability":"nonpayable","type":"function"},
+        {"inputs":[],"name":"highestBid","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+        {"inputs":[],"name":"highestBidder","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
+        {"inputs":[],"name":"minBid","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+        {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"pendingReturns","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+        {"inputs":[],"name":"seller","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
+        {"inputs":[],"name":"status","outputs":[{"internalType":"enum Auction.AuctionStatus","name":"","type":"uint8"}],"stateMutability":"view","type":"function"},
+        {"inputs":[],"name":"withdraw","outputs":[],"stateMutability":"nonpayable","type":"function"}
+    ];
 
-    <div>
-        <h2>Bid</h2>
-        <input type="number" id="bidTokenId" placeholder="Token ID">
-        <input type="number" id="bidAmount" placeholder="Amount (ETH)">
-        <button onclick="placeBid()">Place Bid</button>
-    </div>
+    let contract;
+    let signer;
 
-    <div>
-        <h2>Withdraw Refund</h2>
-        <button onclick="withdrawRefund()">Withdraw Refund</button>
-    </div>
+    async function init() {
+        if (window.ethereum) {
+            try {
+                const provider = new ethers.providers.Web3Provider(window.ethereum);
+                await provider.send("eth_requestAccounts", []);
+                signer = provider.getSigner();
+                contract = new ethers.Contract(contractAddress, contractABI, signer);
+                
+                console.log("Prisijungta sėkmingai!");
 
-    <div>
-        <h2>Finalize Auction</h2>
-        <input type="number" id="finalizeTokenId" placeholder="Token ID">
-        <button onclick="finalizeAuction()">Finalize</button>
-    </div>
+                // Įvykių klausymasis
+                contract.on("BidPlaced", (bidder, amount) => {
+                    addBidToHistory(bidder, amount);
+                    updateUI();
+                });
 
-    <div>
-        <h2>Seller Withdraw</h2>
-        <input type="number" id="withdrawTokenId" placeholder="Token ID">
-        <button onclick="sellerWithdraw()">Withdraw Funds</button>
-    </div>
+                updateUI();
+                setInterval(checkTime, 1000); 
+            } catch (error) {
+                console.error("Klaida prisijungiant:", error);
+            }
+        } else {
+            alert("Įsidiekite MetaMask!");
+        }
+    }
 
-    <script type="module" src="app.js"></script>
+    function addBidToHistory(bidder, amount) {
+        const list = document.getElementById("historyList");
+        if (list) {
+            const item = document.createElement("li");
+            item.innerText = `${bidder.substring(0, 10)}... pastatė ${ethers.utils.formatEther(amount)} ETH`;
+            list.prepend(item);
+        }
+    }
+
+    async function updateUI() {
+        if (!contract) return;
+        const bid = await contract.highestBid();
+        const status = await contract.status();
+        const statusai = ["Aktyvus", "Užbaigtas", "Atšauktas"];
+        
+        document.getElementById("highestBid").innerText = ethers.utils.formatEther(bid);
+        document.getElementById("status").innerText = statusai[status];
+    }
+
+    async function checkTime() {
+        if (!contract) return;
+        try {
+            const endTime = await contract.endTime();
+            const now = Math.floor(Date.now() / 1000);
+            const status = await contract.status();
+            const msgEl = document.getElementById("statusMessage");
+
+            if (!msgEl) return;
+
+            if (now >= endTime.toNumber() && status === 0) {
+                msgEl.innerText = "LAIKAS PASIBAIGĖ! Spauskite 'Finalize'.";
+            } else if (status !== 0) {
+                msgEl.innerText = "Aukcionas uždarytas.";
+            } else {
+                msgEl.innerText = ""; // Išvalom, jei aukcionas aktyvus
+            }
+        } catch (e) {
+            console.error("checkTime klaida", e);
+        }
+    }
+
+    async function placeBid() {
+        const amount = document.getElementById("bidAmount").value;
+        if (!amount || amount <= 0) { alert("Įveskite sumą!"); return; }
+
+        try {
+            console.log("Bandoma atlikti statymą...");
+            const tx = await contract.bid({ value: ethers.utils.parseEther(amount) });
+            await tx.wait();
+            alert("Statymas sėkmingas!");
+        } catch (err) {
+            console.error(err);
+            // Ištraukiame gražesnę klaidą iš MetaMask
+            const reason = err.data?.message || err.message;
+            alert("Klaida: " + reason);
+        }
+    }
+
+    async function finalizeAuction() {
+        try {
+            const tx = await contract.finalize();
+            await tx.wait();
+            alert("Aukcionas užbaigtas!");
+            updateUI();
+        } catch (err) {
+            alert("Klaida: " + (err.reason || "Dar nebaigtas laikas arba jau užbaigta."));
+        }
+    }
+
+    async function withdrawFunds() {
+        try {
+            const tx = await contract.withdraw();
+            await tx.wait();
+            alert("Pinigai pervesti į jūsų piniginę!");
+        } catch (err) {
+            alert("Klaida: " + (err.reason || "Neturite lėšų atsiėmimui."));
+        }
+    }
+
+    window.onload = init;
+</script>
 </body>
 </html>
