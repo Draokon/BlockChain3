@@ -26,27 +26,35 @@
     </style>
 </head>
 <body>
-<div class="container">
-    <h2>Aukciono valdymas</h2>
+<div id="timerCorner">--:--</div>
+
+<div id="setupScreen" class="container">
+    <h2>AUKCIONAS</h2>
+    <input type="number" id="newMinBid" placeholder="Minimalus statymas (ETH)" step="0.01">
+    <input type="number" id="newDuration" placeholder="Trukmė (sekundėmis)">
+    <button class="btn-main" onclick="deployNewAuction()">Sudaryti sutartį</button>
+</div>
+
+<div id="auctionScreen" class="container" style="display: none;">
     <div id="statusMessage"></div>
+    <h2 id="auctionTitle">Antikvariatas</h2>
+    <p>Dabartinė kaina: <strong id="highestBid">0</strong> ETH</p>
+    <p>Laimėtojas: <strong id="highestBidder">Nėra</strong></p>
+    <p>Būsena: <span id="status">Aktyvus</span></p>
+
+    <input type="number" id="bidAmount" placeholder="Suma (ETH)" step="0.01">
+    <button class="btn-main" onclick="placeBid()">Statyti (Bid)</button>
     
-    <p>Statusas: <span id="status">Kraunama...</span></p>
-    <p>Didžiausias statymas: <span id="highestBid">0</span> ETH</p>
+    <button class="btn-finalize" onclick="finalizeAuction()">Užbaigti (Finalize)</button>
+    <button class="btn-cancel" onclick="cancelAuction()">Atšaukti (Cancel)</button>
     
     <hr>
-    
-    <input type="number" id="bidAmount" placeholder="Suma (ETH)" step="0.01">
-    <button onclick="placeBid()">Atlikti statymą (Bid)</button>
-    
-    <button class="btn-secondary" onclick="updateUI()">Atnaujinti duomenis</button>
-    <button class="btn-withdraw" onclick="withdrawFunds()">Atsiimti pinigus (Seller/Outbid)</button>
-    <button class="btn-finalize" onclick="finalizeAuction()">Užbaigti aukcioną (Finalize)</button>
-    
-    <div id="auctionHistory">
-        <h4>Statymų istorija:</h4>
-        <ul id="historyList"></ul>
-    </div>
+    <button class="btn-withdraw" onclick="withdrawFunds()">Atsiimti lėšas (Withdraw)</button>
+
+    <h4>Statymų istorija:</h4>
+    <div id="historyList"></div>
 </div>
+
 
 <script>
     const contractABI = [
