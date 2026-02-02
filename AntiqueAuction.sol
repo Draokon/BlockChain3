@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
 contract Auction {
     enum AuctionStatus { Active, Finalized, Cancelled }
@@ -58,7 +58,7 @@ contract Auction {
         require(amount > 0, "Neturite lesu atsiemimui");
 
         pendingReturns[msg.sender] = 0;
-        (bool success, ) = msg.sender.call{value: amount}("");
+        (bool success, ) = payable(msg.sender).call{value: amount}("");
         require(success, "Pervedimas nepavyko");
 
         emit Withdrawal(msg.sender, amount);
@@ -67,9 +67,9 @@ contract Auction {
     /// Finalize auction
     function finalize() external nonReentrant {
 
-        require(block.timestamp >= endTime, "Aukcionas dar nesibaige");
-        require(!auction.finalized, "Already finalized");
-        require(status == AuctionStatus.Active, "Aukcionas jau uzbaigtas");
+        require(msg.sender == seller, "Tik pardavejas gali uzbaigti");
+        require(block.timestamp >= endTime, "Dar nebaigtas laikas");
+        require(status == AuctionStatus.Active, "Aukcionas jau uzbaigtas arba atsauktas");
 
         status = AuctionStatus.Finalized;
 
@@ -91,4 +91,5 @@ contract Auction {
         emit AuctionCancelled();
     }
 }
+
 
